@@ -1,8 +1,6 @@
 ---
 title: "Final_Project"
 output:
-  html_document: default
-  word_document: default
   rmarkdown::github_document
 
 ---
