@@ -1,0 +1,812 @@
+---
+title: "Final_Project"
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+## Introduction
+This project revolves around analyzing yelp's dataset which has 2 files, one contains the business records and the other file contains reviews specific to each business. These 2 files are linked to each other by business_id field which acts as a foreign key. This dataset has been extracted from Kaggle. The business data contains names, location details and the category of business related to each business ID whereas as the review data contains number of stars given by a user along with the textual reviews. Based on the star reviews, we create our outcome variable(positive) which specifies if the sentiment corresponding to the textual review is positive or not. Textual reviews along with the sentiment indictor are the most important features in this project. In this project, we will be doing EDA to dive deeper into restaurants in Las vegas to analyse the top 2 restaurants having the most positive reviews and then we will work on Phoenix city to find and analyse the restaurant with the most positive and negative reviews. Later, we will be creating a restaurant predictor for both Las Vegas and Phoenix city using naïve based classifier.
+Following are the important variables contained in the dataset
+
+1) Business Dataset 
+  a) business id - Id related to each business
+  b) name        - Name of the business 
+  c) Address     - Street Adress of the business
+  d) city        - City in which the HQ of business is located
+  e) state       - State in which the HQ of business is located
+  f) categories  - categories to which business is related
+2) Review Dataset
+  a) business id - ID related to each business
+  b) stars       - rating given by user to the business
+  c) text        - Textual reviews given by the user
+  d) positive    - A true or false indicator specifying if the sentiment corresponding to the review is positive or not
+  
+##Loading Libraries  
+```{r load library}
+
+options(scipen=8)
+library(tidyverse)
+library(tokenizers)
+library(tidytext)
+library(wordcloud)
+library(tm)
+library(dplyr)
+library(igraph)
+library(ggraph)
+library(stringr)
+library(caret)
+library(naivebayes)
+
+
+```
+
+##Data Preparation and Cleaning
+
+```{r data prep}
+data_reviews <- readr::read_csv(file.choose()) ##loading reviews data
+data_business <- readr::read_csv(file.choose())## loading business data
+
+colnames(data_business)[10] <- "stars_res"
+compiled_data <- inner_join(data_business,data_reviews) ##combining both data
+compiled_data$positive = as.factor(compiled_data$stars > 3) ##creating outcome variable positive sentiment
+
+categories = str_split(compiled_data$categories,";")  ##finding unique categories
+categories = as.data.frame(unlist(categories))
+colnames(categories) = c("Name")
+
+cities_top <- compiled_data %>%
+  group_by(city) %>%
+  summarise(Count = n()) %>%
+  arrange(desc(Count)) %>%
+  ungroup() %>%
+  mutate(City = reorder(city,Count)) %>%
+  head(10)  ##finding top cities in the dataset
+
+top_cat <- categories %>%
+  group_by(Name) %>%
+  summarise(Count = n()) %>%
+  arrange(desc(Count)) %>%
+  ungroup() %>%
+  mutate(Name = reorder(Name,Count)) %>%
+  head(10)   ##finding top categories in our dataset
+
+
+nrow(compiled_data) #number of rows
+ncol(compiled_data) #number of columns
+str(compiled_data)  #display structure
+head(compiled_data) #few rows
+
+
+
+```
+
+##Data Prep(continued)
+
+```{r ran}
+##data cleaning for vegas
+subset_data <- subset(compiled_data, city == "Las Vegas")  ##Filtering data for Las Vegas
+subset_data <- separate_rows(subset_data, categories)     ##seperating different categories
+mustHaves <- c("Restaurants")   
+
+subset_data <- subset_data[with(subset_data, subset_data$categories %in% mustHaves) ,] ##filtering data for only one business i.e. restaurants
+ ##cleaning corpus for new york
+myCorpus <- Corpus(VectorSource(subset_data$text))
+corpus <- tm_map(myCorpus,removeNumbers)
+
+corpus <- tm_map(corpus, removePunctuation)
+
+corpus <- tm_map(corpus, tolower)
+
+corpus <- tm_map(corpus, stemDocument, language = 'english')
+
+corpus <- tm_map(corpus, removeWords, stopwords('english'))
+
+corpus <- tm_map(corpus, stripWhitespace)
+
+bag_of_words <- DocumentTermMatrix(corpus)                                  ##creating DTM to get frequencies
+inspect(bag_of_words)
+
+dataframe<-data.frame(text=unlist(sapply(corpus, `[`)), stringsAsFactors=F) ##creating data fram from matrix 
+subset_data$text <- dataframe$text
+##data cleaning for vegas
+##finding restaurants in Vegas with most positive sentiments
+most5StarsReviews = subset_data %>%
+  filter(positive == TRUE) %>%
+  group_by(business_id) %>%
+  summarise(Count = n()) %>%
+  arrange(desc(Count)) %>%
+  ungroup() %>%
+  mutate(BusinessID = reorder(business_id,Count)) %>%
+  head(10)
+
+most5StarsReviews = inner_join(most5StarsReviews,data_business)
+
+subset_data_phoenix <- subset(compiled_data, city == "Phoenix")                 ##creating data for phoenix
+subset_data_phoenix <- separate_rows(subset_data_phoenix, categories)
+mustHaves <- c("Restaurants")
+    
+subset_data_phoenix <- subset_data_phoenix[with(subset_data_phoenix, subset_data_phoenix$categories %in% mustHaves) ,]  ##creating only restaurants data for phoenix
+
+#cleaning phoenix data
+myCorpus_p <- Corpus(VectorSource(subset_data_phoenix$text))
+    corpus_p <- tm_map(myCorpus_p,removeNumbers)
+    
+    corpus_p <- tm_map(corpus_p, removePunctuation)
+    
+    corpus_p <- tm_map(corpus_p, tolower)
+    
+    corpus_p <- tm_map(corpus_p, stemDocument, language = 'english')
+    
+    corpus_p <- tm_map(corpus_p, removeWords, stopwords('english'))
+    
+    corpus_p <- tm_map(corpus_p, stripWhitespace)
+    
+    bag_of_words_p <- DocumentTermMatrix(corpus_p)
+    inspect(bag_of_words_p)
+    
+    dataframe_p<-data.frame(text=unlist(sapply(corpus_p, `[`)), stringsAsFactors=F) #creating dataframe from corpus 
+    subset_data_phoenix$text <- dataframe_p$text
+
+##finding restaurants with positive sentiments in phoenix
+    most5StarsReviews_p = subset_data_phoenix %>%
+      filter(positive == TRUE) %>%
+      group_by(business_id) %>%
+      summarise(Count = n()) %>%
+      arrange(desc(Count)) %>%
+      ungroup() %>%
+      mutate(BusinessID = reorder(business_id,Count)) %>%
+      head(10)
+    
+    most5StarsReviews_p = inner_join(most5StarsReviews_p,data_business)
+    
+    
+    
+    
+    most5StarsReviews_pn = subset_data_phoenix %>%
+    filter(positive == FALSE) %>%
+    group_by(business_id) %>%
+    summarise(Count = n()) %>%
+    arrange(desc(Count)) %>%
+    ungroup() %>%
+    mutate(BusinessID = reorder(business_id,Count)) %>%
+    head(10)
+  
+    
+  most5StarsReviews_pn = inner_join(most5StarsReviews_pn,data_business)
+
+  #for restaurant bobby we find max words  
+  max_words_bobby_n <- subset_data_phoenix %>%
+    filter(business_id == "pSQFynH1VxkfSmehRXlZWw") %>%
+    unnest_tokens(word, text) %>%
+    filter(!word %in% stop_words$word) %>%
+    count(word,sort = TRUE) %>%
+    ungroup() %>%
+    mutate(word = factor(word, levels = rev(unique(word)))) %>%
+    head(10) 
+    
+  ##for bobby we find bigrams
+   bi_bobby <- subset_data_phoenix %>%
+    filter(business_id == "VyVIneSU7XAWgMBllI6LnQ") %>%
+    unnest_tokens(bigram, text, token = "ngrams", n = 2) %>%
+    separate(bigram, c("word1", "word2"), sep = " ") %>%
+    filter(!word1 %in% stop_words$word,
+           !word2 %in% stop_words$word) %>%
+    unite(bigramWord, word1, word2, sep = " ") %>%
+    group_by(bigramWord) %>%
+    tally() %>%
+    ungroup() %>%
+    arrange(desc(n)) %>%
+    mutate(bigramWord = reorder(bigramWord,n)) %>%
+    head(10) 
+  
+   ##for restaurant pizza we find bigrams
+   bi_piz <- subset_data_phoenix %>%
+    filter(business_id == "pSQFynH1VxkfSmehRXlZWw") %>%
+    unnest_tokens(bigram, text, token = "ngrams", n = 2) %>%
+    separate(bigram, c("word1", "word2"), sep = " ") %>%
+    filter(!word1 %in% stop_words$word,
+           !word2 %in% stop_words$word) %>%
+    unite(bigramWord, word1, word2, sep = " ") %>%
+    group_by(bigramWord) %>%
+    tally() %>%
+    ungroup() %>%
+    arrange(desc(n)) %>%
+    mutate(bigramWord = reorder(bigramWord,n)) %>%
+    head(10) 
+  
+```
+
+
+```{r functions}
+##finction to create wordcloud
+createWordCloud = function(train)
+{
+  train %>%
+    unnest_tokens(word, text) %>%
+    filter(!word %in% stop_words$word) %>%
+    count(word,sort = TRUE) %>%
+    ungroup()  %>%
+    head(30) %>%
+    
+    with(wordcloud(word, n, max.words = 30,colors=brewer.pal(8, "Dark2")))
+  
+}
+##afinn sentiment plot bar chart
+positiveWordsBarGraph <- function(SC) {
+    contributions <- SC %>%
+      unnest_tokens(word, text) %>%
+      count(word,sort = TRUE) %>%
+      ungroup() %>%
+      
+      inner_join(get_sentiments("afinn"), by = "word") %>%
+      group_by(word) %>%
+      summarize(occurences = n(),
+                contribution = sum(score))
+    
+    contributions %>%
+      top_n(20, abs(contribution)) %>%
+      mutate(word = reorder(word, contribution)) %>%
+      head(20) %>%
+      ggplot(aes(word, contribution, fill = contribution > 0)) +
+      geom_col(show.legend = FALSE) +
+      coord_flip() + theme_bw()
+}
+
+#function to visualize bigrams
+visualize_bigrams <- function(bigrams) {
+      set.seed(2016)
+      a <- grid::arrow(type = "closed", length = unit(.15, "inches"))
+      
+      bigrams %>%
+        graph_from_data_frame() %>%
+        ggraph(layout = "fr") +
+        geom_edge_link(aes(edge_alpha = n), show.legend = FALSE, arrow = a) +
+        geom_node_point(color = "lightblue", size = 5) +
+        geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+        theme_void()
+      
+}
+
+##function to count biagrams
+    count_bigrams <- function(dataset) {
+      dataset %>%
+        unnest_tokens(bigram, text, token = "ngrams", n = 2) %>%
+        separate(bigram, c("word1", "word2"), sep = " ") %>%
+        filter(!word1 %in% stop_words$word,
+               !word2 %in% stop_words$word) %>%
+        count(word1, word2, sort = TRUE)
+    }
+
+```
+
+```{r summarizing data frames} 
+summary(subset_data)
+summary(subset_data_phoenix)
+
+```
+
+## Including Visualizations for both single and multivariable plots
+
+First we will start by creating a bar plot to find the distribution of star reviews in our data so that we can convert it to an outcome variable(positive) which will signify if the textual reviews in the data correspond to a positive sentiment or not.
+
+```{r out}
+
+ggplot(compiled_data, aes(x=stars))+
+  geom_bar(stat="bin", bins= 9, fill="violetred4") + 
+  geom_text(stat='count', aes(label=..count..), vjust=1.6, color="white") +
+  ggtitle("Star Counts") +
+  xlab("Stars") + ylab("Count") +
+  theme_minimal()
+
+```
+
+From the above output we can see that most of the reviews in Yelp's dataset has 5 stars followed by 4 stars, 1 stars, 3 stars and 2 stars. Hence, Now we create our binary outcome variable which will signify if the sentiment corresponding to the text is positive or not. Positive column will have true values if the star rating is 4 or more and false otherwise.
+
+Next, we will plot the newly created outcome variable
+
+
+```{r kkk}
+
+ggplot(compiled_data, aes(x=positive))+
+  geom_bar(stat="count", fill="violetred4") + 
+  geom_text(stat='count', aes(label=..count..), vjust=1.6, color="white") +
+  ggtitle("Star Counts") +
+  xlab("Stars") + ylab("Count") +
+  theme_minimal()
+
+```
+
+From the above output, we can interpret that the majority of data has positive sentiments. Positive sentiments are almost double of the negative sentiments.
+
+Now we will start exploring the dataset deeply. We start by finding out the top business categories in our dataset.
+
+```{r outcome}
+
+  ggplot(data = top_cat, aes(x = Name,y = Count)) +
+  geom_bar(stat='identity',colour="white", fill = "#F1C40F") +
+  geom_text(aes(x = Name, y = 1, label = paste0("(",Count,")",sep="")),
+            hjust=0, vjust=.5, size = 4, colour = 'black',
+            fontface = 'bold') +
+  labs(x = 'Name of Category', y = 'Count', 
+       title = 'Top 10 Categories of Business') +
+  coord_flip() + 
+  theme_bw()
+
+```
+
+We have created a bar plot to check the most number of business categories in the dataset. As we can see, restaurants have the most amount of categories. Hence, we have selected restaurants for further analysis.
+
+Next, we will find the cities who have the most reviews in our dataset.
+
+```{r top 20 words}
+ 
+##top citites
+
+  ggplot(data = cities_top, aes(x = City,y = Count)) +
+  geom_bar(stat='identity',colour="white", fill = "#F1C40F") +
+  geom_text(aes(x = City, y = 1, label = paste0("(",round(Count/1e3)," K )",sep="")),
+            hjust=0, vjust=.5, size = 4, colour = 'black',
+            fontface = 'bold') +
+  labs(x = 'City', y = 'Count of Reviews', 
+       title = 'Top Ten Cities with the most Business parties in Yelp') +
+  coord_flip() + 
+  theme_bw()
+```
+
+From the above output we can interpret that out of all the locations in the dataset, the citites with maximum reviews are Las Vegas followed by Phoenix, Toronto etc. Hence, we will be analyzing the top 2 locations i.e. Las Vegas and Phoenix.
+
+```{r bar }
+
+most5StarsReviews %>%
+  mutate(name = reorder(name,Count)) %>%
+  ggplot(aes(x = name,y = Count)) +
+  geom_bar(stat='identity',colour="white", fill = "#FFA07A") +
+  geom_text(aes(x = name, y = 1, label = paste0("(",Count,")",sep="")),
+            hjust=0, vjust=.5, size = 4, colour = 'black',
+            fontface = 'bold') +
+  labs(x = 'Name of the Business', 
+       y = 'Count', 
+       title = 'Name of the Business and Count') +
+  coord_flip() +
+  theme_bw()
+
+```
+
+From the above output of the vertical bar chart, we can infer that Mon Ami Gabi is the restaurant which got the maximum positive sentiments followed by Bacchanal Buffet. We will be analyzing these 2 restaurants in Las Vegas
+
+```{r wc}
+
+ createWordCloud(subset_data %>%
+                  filter(business_id == "4JNXUYY8wbaaDmk3BPzlWw"))
+
+```
+
+Above is a word cloud for restaurant Mon Ami Gabi. We can see that that the most occured words are Steak, food, service, etc. 
+
+
+```{r top words mon ami gabi}
+
+mon_top_words <- subset_data %>%
+  filter(business_id == "4JNXUYY8wbaaDmk3BPzlWw") %>%
+  unnest_tokens(word, text) %>%
+  filter(!word %in% stop_words$word) %>%
+  filter(!word %in% c('food','restaurant')) %>%
+  count(word,sort = TRUE) %>%
+  ungroup() %>%
+  mutate(word = factor(word, levels = rev(unique(word)))) %>%
+  head(10)
+  
+  ggplot(data = mon_top_words, aes(x = word,y = n)) +
+  geom_bar(stat='identity',colour="white", fill = "#FFA07A") +
+  geom_text(aes(x = word, y = 1, label = paste0("(",n,")",sep="")),
+            hjust=0, vjust=.5, size = 4, colour = 'black',
+            fontface = 'bold') +
+  labs(x = 'Word', y = 'Word Count', 
+       title = 'Word Count') +
+  coord_flip() + 
+  theme_bw()
+  
+```
+
+Similarly, we have created a bar chart to show the occurences of words. Both bar chart and word cloud are a good way to represent the occurences, but bar chart is a little better as it shows the frequencies and is easier for comparison.
+
+```{r top 5 star reviews}
+
+ positiveWordsBarGraph(subset_data %>%
+                          filter(business_id == "4JNXUYY8wbaaDmk3BPzlWw"))
+  
+```
+
+Next, we have created a bar chart for by calculating afinn sentiments for this specific restaurant to find the most positive and negative words. It is evident that words such as "fun" have a positive sentiment whereas words such as "damn" have negative sentiments.
+
+
+```{r most 4 stars}
+bi_mon <- subset_data %>%
+    filter(business_id == "4JNXUYY8wbaaDmk3BPzlWw") %>%
+    unnest_tokens(bigram, text, token = "ngrams", n = 2) %>%
+    separate(bigram, c("word1", "word2"), sep = " ") %>%
+    filter(!word1 %in% stop_words$word,
+           !word2 %in% stop_words$word) %>%
+    filter(!word1 %in% c("mon","ami")) %>%
+    filter(!word2 %in% c("gabi")) %>%
+    unite(bigramWord, word1, word2, sep = " ") %>%
+    group_by(bigramWord) %>%
+    tally() %>%
+    ungroup() %>%
+    arrange(desc(n)) %>%
+    mutate(bigramWord = reorder(bigramWord,n)) %>%
+    head(10) 
+    
+    ggplot(data = bi_mon, aes(x = bigramWord,y = n)) +
+    geom_bar(stat='identity',colour="white", fill = "#F1C40F") +
+    geom_text(aes(x = bigramWord, y = 1, label = paste0("(",n,")",sep="")),
+              hjust=0, vjust=.5, size = 4, colour = 'black',
+              fontface = 'bold') +
+    labs(x = 'Bigram', 
+         y = 'Count', 
+         title = 'Bigram and Count') +
+    coord_flip() + 
+    theme_bw()
+
+```
+
+From the above plot, we find out the bigrams i.e the most occured words in pairs to find the relationship of words more deeply. So, we can interpret that bellagio fountain and onion soup are very common used words for Mon ami Gabi.
+
+
+```{r most1}
+
+bigramsMonAmiGabi <- subset_data %>%
+      filter(business_id == "4JNXUYY8wbaaDmk3BPzlWw") %>%
+      count_bigrams()
+    
+    bigramsMonAmiGabi %>%
+      filter(n > 100) %>%
+      visualize_bigrams()
+    
+```
+
+Next, we have just visualized the bigrams to show the relationship between the words. Now we will analyze the next restaurant in vegas i.e.Bachannal buffet'
+
+
+```{r wc top neg}
+    createWordCloud(subset_data %>% filter(business_id == "RESDUcs7fIiihp38-d6_6g"))
+
+
+```
+
+Now, here we have created a wordcloud to find the sentiments of the word.Since this restaurant has buffer, it is of no surprise that "buffet" has most number of occurences along with food, wait etc. 
+
+```{r wc top pos 5}
+bannchanal_top_words <- subset_data %>%
+      filter(business_id == "RESDUcs7fIiihp38-d6_6g") %>%
+      unnest_tokens(word, text) %>%
+      filter(!word %in% stop_words$word) %>%
+      filter(!word %in% c('food','restaurant')) %>%
+      count(word,sort = TRUE) %>%
+      ungroup() %>%
+      mutate(word = factor(word, levels = rev(unique(word)))) %>%
+      head(10)
+    
+    ggplot(data = bannchanal_top_words, aes(x = word,y = n)) +
+      geom_bar(stat='identity',colour="white", fill = "#FFA07A") +
+      geom_text(aes(x = word, y = 1, label = paste0("(",n,")",sep="")),
+                hjust=0, vjust=.5, size = 4, colour = 'black',
+                fontface = 'bold') +
+      labs(x = 'Word', y = 'Word Count', 
+           title = 'Word Count') +
+      coord_flip() + 
+      theme_bw()
+
+```
+
+
+In the above plot, we have just represented the word cloud in a better way i.e bar plot to show the frequency of each words along with them.
+
+
+```{r wc top 4}
+
+positiveWordsBarGraph(subset_data %>%
+                            filter(business_id == "RESDUcs7fIiihp38-d6_6g"))
+
+```
+
+The above plot shows the sentiments of words for the restaurant bacchanal buffet. We can interpret that words such as hurrah have a positive sentiment whereas words such as hell have a negative sentiment. In my view, this is one of the best representation in text mining.
+
+
+```{r log}
+
+bi_bannanal <- subset_data %>%
+      filter(business_id == "RESDUcs7fIiihp38-d6_6g") %>%
+      unnest_tokens(bigram, text, token = "ngrams", n = 2) %>%
+      separate(bigram, c("word1", "word2"), sep = " ") %>%
+      filter(!word1 %in% stop_words$word,
+             !word2 %in% stop_words$word) %>%
+      unite(bigramWord, word1, word2, sep = " ") %>%
+      group_by(bigramWord) %>%
+      tally() %>%
+      ungroup() %>%
+      arrange(desc(n)) %>%
+      mutate(bigramWord = reorder(bigramWord,n)) %>%
+      head(10) 
+    
+    ggplot(data = bi_bannanal, aes(x = bigramWord,y = n)) +
+      geom_bar(stat='identity',colour="white", fill = "#F1C40F") +
+      geom_text(aes(x = bigramWord, y = 1, label = paste0("(",n,")",sep="")),
+                hjust=0, vjust=.5, size = 4, colour = 'black',
+                fontface = 'bold') +
+      labs(x = 'Bigram', 
+           y = 'Count', 
+           title = 'Bigram and Count') +
+      coord_flip() + 
+      theme_bw()
+
+```
+
+From the above plot, we have found out the bigrams i.e. the count of words who have occured most in pairs. We can see that crab leg is very famous along with prime rib in this restaurant.
+
+
+```{r 1}
+
+bigramsbannanal <- subset_data %>%
+      filter(business_id == "RESDUcs7fIiihp38-d6_6g") %>%
+      count_bigrams()
+    
+    bigramsbannanal %>%
+      filter(n > 100) %>%
+      visualize_bigrams()   
+    
+```
+
+In the above plot we have just visualized thebigrams to see the relationship between different words. We can see words such as "wait" has relationships with words like "minute", "like" and "hour".
+
+Now we will move on to Phoenix city. Here we will be analyzing one restaurant with the maximum positive reviews and one restaurant with the maximum negative reviews.
+
+```{r r}
+most5StarsReviews_p %>%
+      mutate(name = reorder(name,Count)) %>%
+      ggplot(aes(x = name,y = Count)) +
+      geom_bar(stat='identity',colour="white", fill = "#FFA07A") +
+      geom_text(aes(x = name, y = 1, label = paste0("(",Count,")",sep="")),
+                hjust=0, vjust=.5, size = 4, colour = 'black',
+                fontface = 'bold') +
+      labs(x = 'Name of the Business', 
+           y = 'Count', 
+           title = 'Name of the Business and Count') +
+      coord_flip() 
+
+```
+
+From the above plot, we have found that Bobby Q has the maximum number of positive reviews in Phoenix city. Hence we will dive deeper into Bobby Q.
+
+```{r}
+
+
+createWordCloud(subset_data_phoenix %>%
+                      filter(business_id == "VyVIneSU7XAWgMBllI6LnQ"))
+
+```
+
+Above is a wordcloud for the restaurant Bobby Q. It shows the most occured words in the reviews for that restaurant. From the wordcloud, we can interpret that BBQ is very famous in that restaurant along with rib and brisket.
+
+```{r r23}
+max_words_bobby <- subset_data_phoenix %>%
+  filter(business_id == "VyVIneSU7XAWgMBllI6LnQ") %>%
+  unnest_tokens(word, text) %>%
+  filter(!word %in% stop_words$word) %>%
+  count(word,sort = TRUE) %>%
+  ungroup() %>%
+  mutate(word = factor(word, levels = rev(unique(word)))) %>%
+  head(10) 
+  
+  ggplot(data = max_words_bobby, aes(x = word,y = n)) +
+  geom_bar(stat='identity',colour="white", fill = "#FFA07A") +
+  geom_text(aes(x = word, y = 1, label = paste0("(",n,")",sep="")),
+            hjust=0, vjust=.5, size = 4, colour = 'black',
+            fontface = 'bold') +
+  labs(x = 'Word', y = 'Word Count', 
+       title = 'Word Count') +
+  coord_flip()    
+
+
+```
+
+Similarly like for the other restaurants, in the above plot we have created a bar chart to represent the frequency of most common words. 
+
+
+```{r k}
+positiveWordsBarGraph(subset_data_phoenix %>%
+                          filter(business_id == "VyVIneSU7XAWgMBllI6LnQ"))
+
+```
+
+Now, in the above bar plot, we are showing both the positive and negative sentiments. It is clear from the above graph that words such as superb and wow have positive sentiments whereas words such as shit and wtf have negative sentiments.
+
+
+```{r kk}
+
+ggplot(data = bi_bobby, aes(x = bigramWord,y = n)) +
+    geom_bar(stat='identity',colour="white", fill = "#F1C40F") +
+    geom_text(aes(x = bigramWord, y = 1, label = paste0("(",n,")",sep="")),
+              hjust=0, vjust=.5, size = 4, colour = 'black',
+              fontface = 'bold') +
+    labs(x = 'Bigram', 
+         y = 'Count', 
+         title = 'Bigram and Count') +
+    coord_flip() + 
+    theme_bw()
+  
+  
+
+```
+
+In the above plot we have created bigrams to find the most occured pairs in our dataset. We can see that Mac and Cheese is very famous in this restaurant which otherwise without this plot for bigrams would be very tough to find.
+
+```{r s}
+ bigramsbobby <- subset_data_phoenix %>%
+    filter(business_id == "VyVIneSU7XAWgMBllI6LnQ") %>%
+    count_bigrams()
+  
+  bigramsbobby %>%
+    filter(n > 50) %>%
+    visualize_bigrams()  
+
+```
+
+In the above plot, we have visualized the relationship between the bigrams. We can see that words such as mac and cheese are together and also, words such as bbq has relationships with multiple words
+
+Now, we will find the restaurant which has the most negative reviews in Phoenix.
+
+```{r la}
+
+ 
+  most5StarsReviews_pn %>%
+    mutate(name = reorder(name,Count)) %>%
+    ggplot(aes(x = name,y = Count)) +
+    geom_bar(stat='identity',colour="white", fill = "#FFA07A") +
+    geom_text(aes(x = name, y = 1, label = paste0("(",Count,")",sep="")),
+              hjust=0, vjust=.5, size = 4, colour = 'black',
+              fontface = 'bold') +
+    labs(x = 'Name of the Business', 
+         y = 'Count', 
+         title = 'Name of the Business and Count') +
+    coord_flip() 
+
+```
+
+From the above plot, we can interpret that Pizzeria Bianco has the most negative reviews. Now, we will dive deeper into this restaurant.
+
+```{r t}
+createWordCloud(subset_data_phoenix %>%
+                    filter(business_id == "pSQFynH1VxkfSmehRXlZWw"))
+  
+```
+
+Now from the above wordcloud, we can interpret that wait is a very frequent occuring word which might be the reason for poor reviews in this restaurant. I f people have to wait for a long time, they are bound to give bad reviews.
+
+
+```{r gg}
+
+ ggplot(data = max_words_bobby_n, aes(x = word,y = n)) +
+    geom_bar(stat='identity',colour="white", fill = "#FFA07A") +
+    geom_text(aes(x = word, y = 1, label = paste0("(",n,")",sep="")),
+              hjust=0, vjust=.5, size = 4, colour = 'black',
+              fontface = 'bold') +
+    labs(x = 'Word', y = 'Word Count', 
+         title = 'Word Count') +
+    coord_flip()    
+
+```
+
+The above bar graph shows the words in wordcloud with their respective frequencies.
+
+```{r pl}
+
+positiveWordsBarGraph(subset_data_phoenix %>%
+                          filter(business_id == "pSQFynH1VxkfSmehRXlZWw"))
+```  
+  
+The above plot is a very useful way to divide the words with positive and negative sentiments. We can see that words such as wow and woo have positive sentiments whereas words such as hell and rape have negative sentiments.   
+  
+```{r tn}  
+  ggplot(data = bi_piz, aes(x = bigramWord,y = n)) +
+    geom_bar(stat='identity',colour="white", fill = "#F1C40F") +
+    geom_text(aes(x = bigramWord, y = 1, label = paste0("(",n,")",sep="")),
+              hjust=0, vjust=.5, size = 4, colour = 'black',
+              fontface = 'bold') +
+    labs(x = 'Bigram', 
+         y = 'Count', 
+         title = 'Bigram and Count') +
+    coord_flip() + 
+    theme_bw()
+```  
+ 
+Similarly, we have created a bar plot for bigrams. We can see that the bigrams such as "wait hour" and "hour wait" have a big frequency. This clarifies our interpretation of the word cloud that the maximum number of negative reviews are the result of the wait time in this restaurant.
+ 
+  
+```{r sbv}  
+  bigramspiz <- subset_data_phoenix %>%
+    filter(business_id == "pSQFynH1VxkfSmehRXlZWw") %>%
+    count_bigrams()
+  
+  bigramspiz %>%
+    filter(n > 50) %>%
+    visualize_bigrams()
+```
+
+In the above plot we have visualized the relationship of bigrams. The word "wait" has relationship with "line", "hour", "minute" etc.
+
+#Modeling
+
+The next step is modeling. Here, the goal is to create 2 models, one for Las Vegas and one for Phoenix. Then, we will compare the 2 models on the same testing data i.e. for las vegas's data. Afterwards, we will calculate the accuracy of the two models and compare to find out if the accuracy of the model with relevant corpus is more. The outcome variable will be our positive binary variable and the independent variable will be cleaned text data converted to document term matrix.
+
+```{r prep}
+subset_vegas_train <- subset_data[1:7000,]      ###dividing data into training and test set
+subset_vegas_test <- subset_data[7001:10000,]
+
+myCorpus_model_veg <- Corpus(VectorSource(subset_vegas_train$text)) ##creating corpus for training
+  
+  dtm_vegas_train <- DocumentTermMatrix(myCorpus_model_veg) ##since this data was already cleaned before, we can straigtaway move to DTM
+  
+myCorpus_model_veg_test <- Corpus(VectorSource(subset_vegas_test$text)) ##creating corpus for test
+
+  dtm_vegas_test <- DocumentTermMatrix(myCorpus_model_veg_test) ##since this data was already cleaned before, we can straigtaway move to DTM
+  
+
+```
+
+The above chunk is for processing data for modeling.
+
+```{r model}
+
+model_vegas <- naive_bayes(as.data.frame(as.matrix(dtm_vegas_train)), subset_vegas_train$positive, laplace = 1)
+  
+model_vegas_predict <- predict(model_vegas, as.data.frame(as.matrix(dtm_vegas_test)))
+  
+confusionMatrix(model_vegas_predict, subset_vegas_test$positive)
+
+```
+
+In the above plot we create and train the model for las vegas. Afterwards we predict the model with the test data. Then, we find the accuracy of our model.
+We can see that the accuracy is 43.83% for Las Vegas.
+
+```{r prp2}
+  subset_phoenix_train <- subset_data_phoenix[1:7000,c(18,22)]
+  
+  myCorpus_model_ph <- Corpus(VectorSource(subset_phoenix_train$text))
+  
+  dtm_phoenix_train <- DocumentTermMatrix(myCorpus_model_ph)
+  
+  
+
+```
+
+
+
+```{r model2}
+model_phoenix <- naive_bayes(as.data.frame(as.matrix(dtm_phoenix_train)), subset_phoenix_train$positive, laplace = 1)
+  
+model_phoenix_predict <- predict(model_phoenix, as.data.frame(as.matrix(dtm_vegas_test)))
+  
+confusionMatrix(model_phoenix_predict, subset_vegas_test$positive)
+
+```
+
+The above code creates a model for phoenix city. Then we compare the model with the testing data of Las vegas to find the accuracy. We can see that the accuracy is 27.7% for Phoenix city prediction. So, as per our analysis, this accuracy makes sense as when we used the relevant corpus to predict the data, we got more accuracy as compared to the time we used an irrelevant corpus.
+
+##Conclusion
+
+The goal of this project was to dive deeper into the analysis of different restaurant and find relevant details. We could successfully find out different ways in which we can represent text data for EDA.
+
+1) Word clouds are very visually appealing, but bar graphs edge over them as they give us the frequencies corresponding to the words as well.
+2) The Sentiment bar graphs helps us divide the words into positive and negative sentiments.
+3) The barplot for bigram gives us the pair of most frequent words which helps us get more clear picture of the words. 
+4) The relationship plot of different words show us how one single word is related to multiple words in the dataset.
+5) The accuracy of prediction with a relevant testing data was more when compared to another model with irrelevant testing data.
+
+This project helped me to find story from data using EDA. It is very important to know the question "why" and EDA helps us dive deeper into the data to find meaningful insights. There were a lot of challenges since the data set is very huge and using EDA only, I could focus on one business and two cities. If I had more time, I would have automated the approach in this project by creating functions and then by using only one command we can get menaingful insights for every city or business.
