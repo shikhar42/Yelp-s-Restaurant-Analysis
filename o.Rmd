@@ -3,6 +3,8 @@ title: "Final_Project"
 output:
   html_document: default
   word_document: default
+  rmarkdown::github_document
+
 ---
 
 ```{r setup, include=FALSE}
@@ -11,7 +13,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## R Markdown
 ## Introduction
-This project revolves around analyzing yelp's dataset which has 2 files, one contains the business records and the other file contains reviews specific to each business. These 2 files are linked to each other by business_id field which acts as a foreign key. This dataset has been extracted from Kaggle. The business data contains names, location details and the category of business related to each business ID whereas as the review data contains number of stars given by a user along with the textual reviews. Based on the star reviews, we create our outcome variable(positive) which specifies if the sentiment corresponding to the textual review is positive or not. Textual reviews along with the sentiment indictor are the most important features in this project. In this project, we will be doing EDA to dive deeper into restaurants in Las vegas to analyse the top 2 restaurants having the most positive reviews and then we will work on Phoenix city to find and analyse the restaurant with the most positive and negative reviews. Later, we will be creating a restaurant predictor for both Las Vegas and Phoenix city using naïve based classifier.
+This project revolves around analyzing yelp's dataset which has 2 files, one contains the business records and the other file contains reviews specific to each business. These 2 files are linked to each other by business_id field which acts as a foreign key. This dataset has been extracted from Kaggle. The business data contains names, location details and the category of business related to each business ID whereas as the review data contains number of stars given by a user along with the textual reviews. Based on the star reviews, we create our outcome variable(positive) which specifies if the sentiment corresponding to the textual review is positive or not. Textual reviews along with the sentiment indictor are the most important features in this project. In this project, we will be doing EDA to dive deeper into restaurants in Las vegas to analyse the top 2 restaurants having the most positive reviews and then we will work on Phoenix city to find and analyse the restaurant with the most positive and negative reviews. Later, we will be creating a restaurant predictor for both Las Vegas and Phoenix city using na?ve based classifier.
 Following are the important variables contained in the dataset
 
 1) Business Dataset 
