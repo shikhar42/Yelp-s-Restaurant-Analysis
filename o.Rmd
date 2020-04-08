@@ -3,6 +3,9 @@ title: "Final_Project"
 output:
   html_document: default
   word_document: default
+  github_document: default
+---
+Installation
 ---
 
 ```{r setup, include=FALSE}
